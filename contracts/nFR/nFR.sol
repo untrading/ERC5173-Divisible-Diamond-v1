@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.8;
 
 import "./InFR.sol";
 import "./nFRStorage.sol";
@@ -233,7 +233,7 @@ abstract contract nFR is InFR, SolidStateERC721 {
     }
 
     function _payLister(uint256 /*tokenId*/, address lister, uint256 paymentAmount) internal virtual { //* This function is for custom payment logic or different payment methods (such as ERC20), it allows overriding the payment logic.
-        (bool sent, ) = payable(lister).call{value: paymentAmount}(""); //? On a side note, what are the benefits of directly sending to the lister upon transaction (push payment) vs having a function they call to claim their funds in a pull payment system.
+        (bool sent, ) = payable(lister).call{value: paymentAmount}(""); // This (push) is more convenient for the user and is safe enough, if a contract that doesn't accept ether lists a token and it fails in this function, it is not detrimental to the rest of the contract.
         require(sent, "ERC5173: Failed to send ETH to lister");
     }
 
@@ -310,13 +310,10 @@ abstract contract nFR is InFR, SolidStateERC721 {
     function _distributeFR(uint256 tokenId, uint256 soldPrice, uint256 profit) internal virtual returns(uint256 allocatedFR) {
         nFRStorage.Layout storage l = nFRStorage.layout();
 
-        address[] memory eligibleAddresses = l._tokenFRInfo[tokenId].addressesInFR;
-        assembly { mstore(eligibleAddresses, sub(mload(eligibleAddresses), 1)) } // This is functionally equivalent to .pop() except for a memory array. Remove last person in FR array as the last person doesn't pay themselves. This won't underflow because someone is always in the FR array. Early on that'll be the minter who is added at mint time.
-
-        if (eligibleAddresses.length == 0) // If eligible addresses is only used to verify that there is only 1 address in the FR cycle and not to pay them, we could just use ownerAmount == 1. Since we already deduct the last (newest) address when calculating FR.
+        if (l._tokenFRInfo[tokenId].ownerAmount == 1) // Make sure the minter isn't paying themselves.
             return 0;
    
-        uint256[] memory FR = _calculateFR(profit, l._tokenFRInfo[tokenId].percentOfProfit, l._tokenFRInfo[tokenId].successiveRatio, l._tokenFRInfo[tokenId].ownerAmount - 1, l._tokenFRInfo[tokenId].numGenerations - 1); // Deduct one from numGenerations and ownerAmount because otherwise it'll create the distribution with an extra person in mind
+        uint256[] memory FR = _calculateFR(profit, l._tokenFRInfo[tokenId].percentOfProfit, l._tokenFRInfo[tokenId].successiveRatio, l._tokenFRInfo[tokenId].ownerAmount - 1, l._tokenFRInfo[tokenId].numGenerations - 1); // Deduct one from numGenerations and ownerAmount because otherwise it'll create the distribution with an extra person in mind, therefore, paying the newest person in the FR cycle who has just sold.
 
         for (uint owner = 0; owner < FR.length; owner++) {
             _allocateFR(tokenId, l._tokenFRInfo[tokenId].addressesInFR[owner], FR[owner]);

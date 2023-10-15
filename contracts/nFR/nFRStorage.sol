@@ -40,9 +40,6 @@ library nFRStorage {
 
         mapping(uint256 => uint256) _tokenApprovalAmounts; // tokenId => approved amount - To be used in conjunction with ERC721 _tokenApprovals.
 
-        // mapping(uint256 => mapping(address => uint256)) _tokenApprovals; // tokenId => (operator => approvedAmount)
-        // mapping(uint256 => address[]) _tokenApprovalAddresses; // Needed to clear mapping on ERC721 transfer or whole transfer. Iterate over all addresses and remove them.
-
         mapping(address => uint256) _allottedFR;
     }
 
