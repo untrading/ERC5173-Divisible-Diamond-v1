@@ -41,7 +41,7 @@ interface InFR is IERC165 {
 
     function getListInfo(uint256 tokenId) external view returns(uint256, uint256, address, bool);
 
-    function getAssetInfo(uint256 tokenId) external view returns (uint256, uint256);
+    function getAssetInfo(uint256 tokenId) external view returns (uint256);
 
     function getApprovedAmount(uint256 tokenId) external view returns (uint256);
     

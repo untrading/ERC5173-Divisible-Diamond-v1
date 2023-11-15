@@ -58,12 +58,11 @@ abstract contract nFR is InFR, SolidStateERC721 {
         virtual
         override
         returns (
-            uint256,
             uint256
         )
     {
         nFRStorage.Layout storage l = nFRStorage.layout();
-        return (l._tokenAssetInfo[tokenId].amount, l._tokenAssetInfo[tokenId].initialAmount);
+        return (l._tokenAssetInfo[tokenId].amount);
     }
 
     function getAllottedFR(address account) external view virtual override returns (uint256) {
@@ -120,13 +119,13 @@ abstract contract nFR is InFR, SolidStateERC721 {
         require(l._tokenListInfo[tokenId].isListed == true, "Token is not listed");
         require(amount <= l._tokenListInfo[tokenId].saleAmount, "Buy amount exceeds list amount");
 
-        uint256 salePrice = ((amount).div(l._tokenListInfo[tokenId].saleAmount)).mul(l._tokenListInfo[tokenId].salePrice); // Sale price should be determined based on the amount supplied into the buy function, (buyAmount/saleAmount) * salePrice
+        uint256 transactionValue = (amount).mul(l._tokenListInfo[tokenId].salePrice); // Sale price should be determined based on the amount supplied into the buy function, (buyAmount) * salePrice
 
-        require(bypassValueCheck || salePrice == msg.value, "salePrice and msg.value mismatch");
+        require(bypassValueCheck || transactionValue == msg.value, "salePrice and msg.value mismatch");
 
-        _transferFrom(l._tokenListInfo[tokenId].lister, _msgSender(), tokenId, amount, salePrice);
+        _transferFrom(l._tokenListInfo[tokenId].lister, _msgSender(), tokenId, amount, transactionValue);
 
-        emit Bought(tokenId, salePrice, amount);
+        emit Bought(tokenId, l._tokenListInfo[tokenId].salePrice, amount);
     }
 
     function transferFrom(address from, address to, uint256 tokenId, uint256 amount) public virtual {
@@ -178,7 +177,7 @@ abstract contract nFR is InFR, SolidStateERC721 {
         _transfer(from, to, tokenId, l._tokenAssetInfo[tokenId].amount);
     }
 
-    function _transferFrom(address from, address to, uint256 tokenId, uint256 amount, uint256 soldPrice) internal virtual {
+    function _transferFrom(address from, address to, uint256 tokenId, uint256 amount, uint256 transactionValue) internal virtual {
         require(from != to, "transfer to self");
         nFRStorage.Layout storage l = nFRStorage.layout();
 
@@ -190,18 +189,20 @@ abstract contract nFR is InFR, SolidStateERC721 {
 
         uint256 allocatedFR = 0;
 
+        uint256 salePrice = l._tokenListInfo[tokenId].salePrice;
+
         // Could make the profit formula a helper function in the nFRStorage library
-        int256 profit = ((int256(soldPrice).div(int256(amount))) - (int256(l._tokenFRInfo[tokenId].lastSoldPrice).div(int256(l._tokenAssetInfo[tokenId].initialAmount)))).mul(int256(amount)); // All values are uints, however, when doing these calculations we need ints because they have the potential to be negatives/"underflow" if a tx is unprofitable. ((Current Sale Price / Current Sale Amount) - (Last Sold Price / Initial Amount)) * Current Sale Amount | (Current Sale Price - Last Sale Price) / (Initial Token Amount / Sale Amount) - If we don't have initial token amount, then you can't properly calculate the profits. If you sell half of the token, then the other half, it'll be as if you made 1.5x of your actual profits. A new formula might look like (Current Sale Price / Current Sale Amount) - (Last Sold Price / Initial Amount). I bought 5 tokens for 10 ETH (2 ETH Unit Price), then I sold 1 token for 5 ETH (5 ETH Unit Price). I made 3 ETH. (5/1) - (10/5) = 3. This formula seems to only work if the amount being sold is not equal to the initial amount, if it is equal we must use one of two formuals, either the same formula multiplied by the amount being sold: ((Current Sale Price / Current Sale Amount) - (Last Sold Price / Initial Amount)) * Current Sale Amount. Or the old formula: (Current Sale Price - Last Sale Price) / (Initial Token Amount / Sale Amount). This new formula should work with both whole sales and fractional sales: ((Current Sale Price / Current Sale Amount) - (Last Sold Price / Initial Amount)) * Current Sale Amount.
+        int256 profit = (int256(salePrice) - int256(l._tokenFRInfo[tokenId].lastSoldPrice)).mul(int256(amount)); // All values are uints, however, when doing these calculations we need ints because they have the potential to be negatives/"underflow" if a tx is unprofitable. ((Current Sale Price / Current Sale Amount) - (Last Sold Price / Initial Amount)) * Current Sale Amount | (Current Sale Price - Last Sale Price) / (Initial Token Amount / Sale Amount) - If we don't have initial token amount, then you can't properly calculate the profits. If you sell half of the token, then the other half, it'll be as if you made 1.5x of your actual profits. A new formula might look like (Current Sale Price / Current Sale Amount) - (Last Sold Price / Initial Amount). I bought 5 tokens for 10 ETH (2 ETH Unit Price), then I sold 1 token for 5 ETH (5 ETH Unit Price). I made 3 ETH. (5/1) - (10/5) = 3. This formula seems to only work if the amount being sold is not equal to the initial amount, if it is equal we must use one of two formuals, either the same formula multiplied by the amount being sold: ((Current Sale Price / Current Sale Amount) - (Last Sold Price / Initial Amount)) * Current Sale Amount. Or the old formula: (Current Sale Price - Last Sale Price) / (Initial Token Amount / Sale Amount). This new formula should work with both whole sales and fractional sales: ((Current Sale Price / Current Sale Amount) - (Last Sold Price / Initial Amount)) * Current Sale Amount.
 
         if (profit > 0) { // NFT sold for a profit
-            allocatedFR = _distributeFR(tokenId, soldPrice, uint256(profit));
+            allocatedFR = _distributeFR(tokenId, uint256(profit));
         }
 
-        uint256 newTokenId; //? Do we even need this if we aren't using it anywhere?
+        uint256 newTokenId; //? Do we even need this if we aren't using it anywhere? We could emit it. We could also emit profit.
 
         if (amount != l._tokenAssetInfo[tokenId].amount) {
             // Mint a new token that clones the FR info, then deducts the amount from the current token, then we set the newTokenId
-            newTokenId = _createSplitToken(to, tokenId, amount, soldPrice);
+            newTokenId = _createSplitToken(to, tokenId, amount, salePrice);
 
             l._tokenAssetInfo[tokenId].amount -= amount;
 
@@ -211,7 +212,7 @@ abstract contract nFR is InFR, SolidStateERC721 {
             ERC721BaseInternal._transfer(from, to, tokenId);
             require(_checkOnERC721Received(from, to, tokenId, ""), "ERC721: transfer to non ERC721Receiver implementer");
 
-            l._tokenFRInfo[tokenId].lastSoldPrice = soldPrice; // Should not be updating this if the transfer is not whole. Otherwise, you can sell 0.1 tokens at 1000, then sell 0.9 tokens at 1000 paying 0 FR.
+            l._tokenFRInfo[tokenId].lastSoldPrice = salePrice; // Should not be updating this if the transfer is not whole. Otherwise, you can sell 0.1 tokens at 1000, then sell 0.9 tokens at 1000 paying 0 FR.
             l._tokenFRInfo[tokenId].ownerAmount++;
 
             _shiftGenerations(to, tokenId);
@@ -222,14 +223,13 @@ abstract contract nFR is InFR, SolidStateERC721 {
         address lister = l._tokenListInfo[tokenId].lister;
 
         if (l._tokenListInfo[tokenId].isListed && amount < l._tokenListInfo[tokenId].saleAmount) { // If the token sold a partial amount
-            l._tokenListInfo[tokenId].salePrice -= soldPrice;
             l._tokenListInfo[tokenId].saleAmount -= amount;
         } else { // If the entire list was fulfilled or the token isn't listed, delete everything
             delete l._tokenListInfo[tokenId];
         }
 
-        if (soldPrice > 0)
-            _payLister(tokenId, lister, soldPrice - allocatedFR);
+        if (transactionValue > 0)
+            _payLister(tokenId, lister, transactionValue - allocatedFR);
     }
 
     function _payLister(uint256 /*tokenId*/, address lister, uint256 paymentAmount) internal virtual { //* This function is for custom payment logic or different payment methods (such as ERC20), it allows overriding the payment logic.
@@ -303,11 +303,10 @@ abstract contract nFR is InFR, SolidStateERC721 {
 
         _shiftGenerations(to, tokenId); // Functionally equivalent to pushing addressInFR, however, takes into account calls providing a non-empty addressesInFR
 
-        l._tokenAssetInfo[tokenId].initialAmount = amount;
         l._tokenAssetInfo[tokenId].amount = amount;
     }
 
-    function _distributeFR(uint256 tokenId, uint256 soldPrice, uint256 profit) internal virtual returns(uint256 allocatedFR) {
+    function _distributeFR(uint256 tokenId, uint256 profit) internal virtual returns(uint256 allocatedFR) {
         nFRStorage.Layout storage l = nFRStorage.layout();
 
         if (l._tokenFRInfo[tokenId].ownerAmount == 1) // Make sure the minter isn't paying themselves.
@@ -321,7 +320,7 @@ abstract contract nFR is InFR, SolidStateERC721 {
 
         allocatedFR = profit.mul(l._tokenFRInfo[tokenId].percentOfProfit);
 
-        emit FRDistributed(tokenId, soldPrice, allocatedFR);
+        emit FRDistributed(tokenId, l._tokenListInfo[tokenId].salePrice, allocatedFR); // Emitting sale price again is redundant
     }
 
     function _allocateFR(uint256 /*tokenId*/, address owner, uint256 FR) internal virtual {
@@ -362,7 +361,6 @@ abstract contract nFR is InFR, SolidStateERC721 {
         require(amount > 0, "Invalid Data Passed");
         nFRStorage.Layout storage l = nFRStorage.layout();
 
-        l._defaultAssetInfo.initialAmount = amount;
         l._defaultAssetInfo.amount = amount;
     }
 
