@@ -20,7 +20,7 @@ type FRInfo = [
   
 type ListInfo = [ethers.BigNumber, ethers.BigNumber, string, boolean];
   
-type AssetInfo = [ethers.BigNumber, ethers.BigNumber];
+type AssetInfo = ethers.BigNumber;
 
 describe("nFR implementation contract", function() {
 
@@ -83,7 +83,7 @@ describe("nFR implementation contract", function() {
 		});
 
 		it("Should have proper asset info", async () => {
-			expect(await nFR.getAssetInfo(tokenId)).to.deep.equal([ tokenAmount, tokenAmount ]);
+			expect(await nFR.getAssetInfo(tokenId)).to.equal(tokenAmount);
 		});
 
 	});
@@ -108,7 +108,7 @@ describe("nFR implementation contract", function() {
 				expect(await nFR.ownerOf("2")).to.equal(owner.address);
 
 				expect(await nFR.getFRInfo("2")).to.deep.equal([ numGenerations, percentOfProfit, successiveRatio, ethers.BigNumber.from("0"), ethers.BigNumber.from("1"), [owner.address] ]);
-				expect(await nFR.getAssetInfo("2")).to.deep.equal([ tokenAmount, tokenAmount ]);
+				expect(await nFR.getAssetInfo("2")).to.deep.equal(tokenAmount);
 			});
 		})
 
@@ -162,8 +162,7 @@ describe("nFR implementation contract", function() {
 				let expectedArray: FRInfo = [0, ethers.BigNumber.from("0"), ethers.BigNumber.from("0"), ethers.BigNumber.from("0"), ethers.BigNumber.from("0"), []];
 				expect(await nFR.getFRInfo(tokenId)).to.deep.equal(expectedArray);
 
-				let expectedAssetArray: AssetInfo = [ ethers.BigNumber.from("0"), ethers.BigNumber.from("0") ];
-				expect(await nFR.getAssetInfo(tokenId)).to.deep.equal(expectedAssetArray);
+				expect(await nFR.getAssetInfo(tokenId)).to.deep.equal(ethers.BigNumber.from("0"));
 			});
 		})
 	});
@@ -264,12 +263,12 @@ describe("nFR implementation contract", function() {
 	
 				let balanceBefore = await ethers.provider.getBalance(addrs[0].address);
 	
-				let expectedBalance = balanceBefore.sub(ethers.utils.parseUnits("1"));
+				let expectedBalance = balanceBefore.sub(ethers.utils.parseUnits("0.5"));
 	
 				await nFR.list(tokenId, transferAmount, ethers.utils.parseUnits("1"));
 	
 				let tx = await signer.buy(tokenId, transferAmount, {
-					value: ethers.utils.parseUnits("1")
+					value: ethers.utils.parseUnits("0.5")
 				});
 	
 				expect(await ethers.provider.getBalance(addrs[0].address)).to.be.equal(expectedBalance.sub(await getTXCost(tx)));
@@ -278,11 +277,11 @@ describe("nFR implementation contract", function() {
 				expect(await nFR.getFRInfo(tokenId)).to.deep.equal([ numGenerations, percentOfProfit, successiveRatio, ethers.utils.parseUnits("0"), ethers.BigNumber.from("1"), [owner.address] ]);
 				expect(await nFR.getFRInfo(tokenId + 1)).to.deep.equal([ numGenerations, percentOfProfit, successiveRatio, ethers.utils.parseUnits("1"), ethers.BigNumber.from("2"), [owner.address, addrs[0].address] ]); 
 
-				/* Below Here is Messy - but essentially we are testing the fractional profit calculation, we bought bought an NFT, which was 1.5, or 0.75 when we split it in half, then we buy half for 0.9, which is a 0.15 profit, 16% of that, is then 0.024, which is correct, the contract works exactly like that. */
+				/* Below Here is Messy - but essentially we are testing the fractional profit calculation, we bought bought an NFT, which was at a unit price of 1.5, then we buy half at a unit price of 1.6, which is a 0.05 profit, 16% of that, is then 0.008, which is correct, the contract works exactly like that. */
 	
 				balanceBefore = await ethers.provider.getBalance(addrs[1].address);
 	
-				expectedBalance = balanceBefore.sub(ethers.utils.parseUnits("1.5"));
+				expectedBalance = balanceBefore.sub(ethers.utils.parseUnits("0.75"));
 	
 				let sellerExpectedBalance = (await ethers.provider.getBalance(addrs[0].address)).add(ethers.utils.parseUnits("0.5"));
 	
@@ -293,12 +292,12 @@ describe("nFR implementation contract", function() {
 				let buyer = nFR.connect(addrs[1]);
 				
 				tx = await buyer.buy(tokenId + 1, transferAmount, {
-					value: ethers.utils.parseUnits("1.5")
+					value: ethers.utils.parseUnits("0.75")
 				});
 
 				expectedBalance = expectedBalance.sub(await getTXCost(tx));
 
-				tx = await buyer.list(tokenId + 1, transferAmount.div(2), ethers.utils.parseUnits("0.9"));
+				tx = await buyer.list(tokenId + 1, transferAmount.div(2), ethers.utils.parseUnits("1.6"));
 
 				expectedBalance = expectedBalance.sub(await getTXCost(tx));
 				
@@ -307,26 +306,26 @@ describe("nFR implementation contract", function() {
 				let oldContractBalance = await ethers.provider.getBalance(nFR.address);
 
 				await buyer2.buy(tokenId + 1, transferAmount.div(2), {
-					value: ethers.utils.parseUnits("0.9")
+					value: ethers.utils.parseUnits("0.4")
 				});
 
-				expectedBalance = expectedBalance.add(ethers.utils.parseUnits("0.9")).sub(mul(ethers.utils.parseUnits("0.15"), percentOfProfit)); // ((0.9/0.25) - (1.5/0.5)) * 0.25 = 0.15
+				expectedBalance = expectedBalance.add(ethers.utils.parseUnits("0.4")).sub(mul(ethers.utils.parseUnits("0.025"), percentOfProfit)); // ((0.9/0.25) - (1.5/0.5)) * 0.25 = 0.15
 
 				expect(await ethers.provider.getBalance(nFR.address)).to.be.above(oldContractBalance);
 	
 				expect(await ethers.provider.getBalance(addrs[0].address)).to.be.above(sellerExpectedBalance);
-				expect(await ethers.provider.getBalance(addrs[1].address)).to.be.equal(expectedBalance);
-				expect(await ethers.provider.getBalance(nFR.address)).to.equal(ethers.utils.parseUnits("0.104")); // (0.5 * 0.16) + (0.15 * 0.16) = 0.104
-				expect(await nFR.getAllottedFR(owner.address)).to.be.above(ethers.utils.parseUnits("0.08")); // 2 payments
+				expect(await ethers.provider.getBalance(addrs[1].address)).to.equal(expectedBalance);
+				expect(await ethers.provider.getBalance(nFR.address)).to.equal(ethers.utils.parseUnits("0.044")); // (0.25 * 0.16) + (0.025 * 0.16) = 0.044
+				expect(await nFR.getAllottedFR(owner.address)).to.be.above(ethers.utils.parseUnits("0.04")); // 2 payments
 				expect(await nFR.getAllottedFR(addrs[0].address)).to.be.above(ethers.utils.parseUnits("0")); // 1 payment
 				expect(await nFR.getAllottedFR(addrs[1].address)).to.equal(ethers.utils.parseUnits("0")); // No payments
 				expect(await nFR.getAllottedFR(addrs[2].address)).to.equal(ethers.utils.parseUnits("0")); // No payments
 				expect(await nFR.getFRInfo(tokenId + 1)).to.deep.equal([ numGenerations, percentOfProfit, successiveRatio, ethers.utils.parseUnits("1.5"), ethers.BigNumber.from("3"), [ owner.address, addrs[0].address, addrs[1].address ] ]);
-				expect(await nFR.getFRInfo(tokenId + 2)).to.deep.equal([ numGenerations, percentOfProfit, successiveRatio, ethers.utils.parseUnits("0.9"), ethers.BigNumber.from("4"), [ owner.address, addrs[0].address, addrs[1].address, addrs[2].address ] ]);
-				expect(await nFR.getAssetInfo(tokenId)).to.deep.equal([ ethers.utils.parseUnits("0.5"), ethers.utils.parseUnits("1") ]);
+				expect(await nFR.getFRInfo(tokenId + 2)).to.deep.equal([ numGenerations, percentOfProfit, successiveRatio, ethers.utils.parseUnits("1.6"), ethers.BigNumber.from("4"), [ owner.address, addrs[0].address, addrs[1].address, addrs[2].address ] ]);
+				expect(await nFR.getAssetInfo(tokenId)).to.equal(ethers.utils.parseUnits("0.5"));
 
-				expect(await nFR.getAssetInfo(tokenId + 1)).to.deep.equal([ ethers.utils.parseUnits("0.25"), ethers.utils.parseUnits("0.5") ]);
-				expect(await nFR.getAssetInfo(tokenId + 2)).to.deep.equal([ ethers.utils.parseUnits("0.25"), ethers.utils.parseUnits("0.25") ]);
+				expect(await nFR.getAssetInfo(tokenId + 1)).to.equal(ethers.utils.parseUnits("0.25"));
+				expect(await nFR.getAssetInfo(tokenId + 2)).to.equal(ethers.utils.parseUnits("0.25"));
 			});
 	
 			it("Should treat an unprofitable transaction properly", async function() {
@@ -335,7 +334,7 @@ describe("nFR implementation contract", function() {
 				await nFR.list(tokenId, transferAmount, ethers.utils.parseUnits("1"));
 	
 				await signer.buy(tokenId, transferAmount, {
-					value: ethers.utils.parseUnits("1")
+					value: ethers.utils.parseUnits("0.5")
 				});
 	
 				let secondSigner = await nFR.connect(addrs[1]);
@@ -344,9 +343,9 @@ describe("nFR implementation contract", function() {
 	
 				await signer.list(tokenId + 1, transferAmount, ethers.utils.parseUnits("0.5"));
 	
-				await secondSigner.buy(tokenId + 1, transferAmount, { value: ethers.utils.parseUnits("0.5") });
+				await secondSigner.buy(tokenId + 1, transferAmount, { value: ethers.utils.parseUnits("0.25") });
 	
-				expect(await ethers.provider.getBalance(addrs[0].address)).to.be.above(balanceBefore.add(ethers.utils.parseUnits("0.5")).sub(ethers.utils.parseUnits("0.001")));
+				expect(await ethers.provider.getBalance(addrs[0].address)).to.be.above(balanceBefore.add(ethers.utils.parseUnits("0.25")).sub(ethers.utils.parseUnits("0.001")));
 				expect(await nFR.getAllottedFR(owner.address)).to.equal(ethers.utils.parseUnits("0"));
 				expect(await nFR.getAllottedFR(addrs[0].address)).to.equal(ethers.utils.parseUnits("0"));
 				expect(await nFR.getFRInfo(tokenId + 1)).to.deep.equal([ numGenerations, percentOfProfit, successiveRatio, ethers.utils.parseUnits("0.5"), ethers.BigNumber.from("3"), [owner.address, addrs[0].address, addrs[1].address] ]);
@@ -355,14 +354,14 @@ describe("nFR implementation contract", function() {
 
 				let thirdSigner = await nFR.connect(addrs[2]);
 
-				await secondSigner.list(tokenId + 1, transferAmount.div(2), ethers.utils.parseUnits("0.24"));
+				await secondSigner.list(tokenId + 1, transferAmount.div(2), ethers.utils.parseUnits("0.48"));
 
-				await thirdSigner.buy(tokenId + 1, transferAmount.div(2), { value: ethers.utils.parseUnits("0.24" )});
+				await thirdSigner.buy(tokenId + 1, transferAmount.div(2), { value: ethers.utils.parseUnits("0.12")});
 
-				expect(await ethers.provider.getBalance(addrs[1].address)).to.be.above(balanceBefore.add(ethers.utils.parseUnits("0.24")).sub(ethers.utils.parseUnits("0.001")));
+				expect(await ethers.provider.getBalance(addrs[1].address)).to.be.above(balanceBefore.add(ethers.utils.parseUnits("0.12")).sub(ethers.utils.parseUnits("0.001")));
 				expect(await nFR.getAllottedFR(owner.address)).to.equal(ethers.utils.parseUnits("0"));
 				expect(await nFR.getAllottedFR(addrs[0].address)).to.equal(ethers.utils.parseUnits("0"));
-				expect(await nFR.getFRInfo(tokenId + 2)).to.deep.equal([ numGenerations, percentOfProfit, successiveRatio, ethers.utils.parseUnits("0.24"), ethers.BigNumber.from("4"), [owner.address, addrs[0].address, addrs[1].address, addrs[2].address] ]);
+				expect(await nFR.getFRInfo(tokenId + 2)).to.deep.equal([ numGenerations, percentOfProfit, successiveRatio, ethers.utils.parseUnits("0.48"), ethers.BigNumber.from("4"), [owner.address, addrs[0].address, addrs[1].address, addrs[2].address] ]);
 			});
 
 			it("Should run through 10 FR Generations successfully", async () => {
@@ -373,9 +372,11 @@ describe("nFR implementation contract", function() {
 	
 				let s = nFR.connect(addrs[0]);
 	
-				await s.buy(currentTokenId, buyAmount, { value: baseSale });
+				await s.buy(currentTokenId, buyAmount, { value: mul(baseSale, buyAmount) });
 
 				currentTokenId++;
+
+				let expectedContractBalance = ethers.utils.parseUnits("0");
 
 				for (let transfers = 0; transfers < 9; transfers++) { // This results in 11 total owners, minter, transfer, 9 more transfers.
 					let signer = nFR.connect(addrs[transfers]);
@@ -386,7 +387,9 @@ describe("nFR implementation contract", function() {
 	
 					await signer.list(currentTokenId, buyAmount, salePrice);
 	
-					await secondSigner.buy(currentTokenId, buyAmount, { value: salePrice });
+					await secondSigner.buy(currentTokenId, buyAmount, { value: mul(salePrice, buyAmount) });
+
+					expectedContractBalance = expectedContractBalance.add(mul(percentOfProfit, (mul(ethers.utils.parseUnits(saleIncrementor), buyAmount))));
 
 					currentTokenId++;
 				}
@@ -399,17 +402,9 @@ describe("nFR implementation contract", function() {
 	
 				expect(await nFR.getFRInfo(currentTokenId)).to.deep.equal(expectedArray);
 
-				let expectedAssetInfo: AssetInfo = [ethers.utils.parseUnits("0.0009765625"), ethers.utils.parseUnits("0.0009765625")]; // 1 * (1/2**10)
+				expect(await nFR.getAssetInfo(currentTokenId)).to.equal(ethers.utils.parseUnits("0.0009765625"));
 
-				expect(await nFR.getAssetInfo(currentTokenId)).to.deep.equal(expectedAssetInfo);
-
-				expect(await nFR.getAssetInfo(tokenId)).to.deep.equal([ ethers.utils.parseUnits("0.5"), ethers.utils.parseUnits("1") ]);
-
-				let expectedContractBalance = ethers.utils.parseUnits("0.16");
-
-				for (let inc = 1; inc <= 8; inc++) {
-					expectedContractBalance = expectedContractBalance.add(mul(percentOfProfit, (ethers.utils.parseUnits("1").add(mul(ethers.utils.parseUnits("0.25"), ethers.utils.parseUnits(inc.toString())))))) // Messy, should just put expectedContractBalance to top of test and increment it throughout the runtime
-				}
+				expect(await nFR.getAssetInfo(tokenId)).to.equal(ethers.utils.parseUnits("0.5"));
 	
 				expect(await ethers.provider.getBalance(nFR.address)).to.equal(expectedContractBalance);
 	
@@ -622,18 +617,18 @@ describe("nFR implementation contract", function() {
 
 				await nFR.list(tokenId, transferAmount, baseSale);
 
-				await buyer.buy(tokenId, transferAmount.div(2), { value: baseSale.div(2) });
+				await buyer.buy(tokenId, transferAmount.div(2), { value: mul(baseSale, transferAmount.div(2)) });
 
-				expect(await ethers.provider.getBalance(owner.address)).to.be.above(balanceBefore.add(ethers.utils.parseUnits("0.5")).sub(ethers.utils.parseUnits("0.001")));
+				expect(await ethers.provider.getBalance(owner.address)).to.be.above(balanceBefore.add(ethers.utils.parseUnits("0.25")).sub(ethers.utils.parseUnits("0.001")));
 				expect(await nFR.getAllottedFR(owner.address)).to.equal(ethers.utils.parseUnits("0"));
 				
 				expect(await nFR.getFRInfo(tokenId)).to.deep.equal([ numGenerations, percentOfProfit, successiveRatio, ethers.utils.parseUnits("0"), ethers.BigNumber.from("1"), [owner.address] ]);
-				expect(await nFR.getFRInfo(tokenId + 1)).to.deep.equal([ numGenerations, percentOfProfit, successiveRatio, ethers.utils.parseUnits("0.5"), ethers.BigNumber.from("2"), [owner.address, addrs[0].address] ]);
+				expect(await nFR.getFRInfo(tokenId + 1)).to.deep.equal([ numGenerations, percentOfProfit, successiveRatio, baseSale, ethers.BigNumber.from("2"), [owner.address, addrs[0].address] ]);
 
-				expect(await nFR.getAssetInfo(tokenId)).to.deep.equal([ tokenAmount.sub(tokenAmount.div(4)), tokenAmount ]);
-				expect(await nFR.getAssetInfo(tokenId + 1)).to.deep.equal([ transferAmount.div(2), transferAmount.div(2) ]);
+				expect(await nFR.getAssetInfo(tokenId)).to.equal(tokenAmount.sub(tokenAmount.div(4)));
+				expect(await nFR.getAssetInfo(tokenId + 1)).to.equal(transferAmount.div(2));
 
-				expect(await nFR.getListInfo(tokenId)).to.deep.equal([ baseSale.div(2), transferAmount.div(2), owner.address, true ]);
+				expect(await nFR.getListInfo(tokenId)).to.deep.equal([ baseSale, transferAmount.div(2), owner.address, true ]);
 			});
 		});
 
