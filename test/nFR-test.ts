@@ -748,6 +748,21 @@ describe("nFR implementation contract", function() {
 			});
 		});
 
+		it("Should emit Transferred", async () => {
+			let signer = nFR.connect(addrs[0]);
+
+			await nFR.list(tokenId, tokenAmount, ethers.utils.parseUnits("1"));
+
+			await signer.buy(tokenId, tokenAmount, { value: ethers.utils.parseUnits("1") });
+
+			await signer.list(tokenId, tokenAmount, ethers.utils.parseUnits("1.5"));
+
+			signer = nFR.connect(addrs[1]);
+
+			await expect(signer.buy(tokenId, tokenAmount, { value: ethers.utils.parseUnits("1.5") })).to.emit(nFR, "Transferred")
+			.withArgs(tokenId, tokenAmount, ethers.utils.parseUnits("0.5"), 0);
+		});
+
 		it("Should emit FRDistributed", async function() {
 			let signer = nFR.connect(addrs[0]);
 
@@ -760,7 +775,7 @@ describe("nFR implementation contract", function() {
 			signer = nFR.connect(addrs[1]);
 
 			await expect(signer.buy(tokenId, tokenAmount, { value: ethers.utils.parseUnits("1.5") })).to.emit(nFR, "FRDistributed")
-			.withArgs(tokenId, ethers.utils.parseUnits("1.5"), ethers.utils.parseUnits("0.08"));
+			.withArgs(tokenId, ethers.utils.parseUnits("0.08"));
 		});
 
 		describe("Claiming", function() {

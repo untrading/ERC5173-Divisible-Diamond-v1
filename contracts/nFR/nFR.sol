@@ -230,6 +230,8 @@ abstract contract nFR is InFR, SolidStateERC721 {
 
         if (transactionValue > 0)
             _payLister(tokenId, lister, transactionValue - allocatedFR);
+
+        emit Transferred(tokenId, amount, profit, newTokenId);
     }
 
     function _payLister(uint256 /*tokenId*/, address lister, uint256 paymentAmount) internal virtual { //* This function is for custom payment logic or different payment methods (such as ERC20), it allows overriding the payment logic.
@@ -320,7 +322,7 @@ abstract contract nFR is InFR, SolidStateERC721 {
 
         allocatedFR = profit.mul(l._tokenFRInfo[tokenId].percentOfProfit);
 
-        emit FRDistributed(tokenId, l._tokenListInfo[tokenId].salePrice, allocatedFR); // Emitting sale price again is redundant
+        emit FRDistributed(tokenId, allocatedFR);
     }
 
     function _allocateFR(uint256 /*tokenId*/, address owner, uint256 FR) internal virtual {
