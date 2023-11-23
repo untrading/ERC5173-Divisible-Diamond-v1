@@ -119,13 +119,15 @@ abstract contract nFR is InFR, SolidStateERC721 {
         require(l._tokenListInfo[tokenId].isListed == true, "Token is not listed");
         require(amount <= l._tokenListInfo[tokenId].saleAmount, "Buy amount exceeds list amount");
 
-        uint256 transactionValue = (amount).mul(l._tokenListInfo[tokenId].salePrice); // Sale price should be determined based on the amount supplied into the buy function, (buyAmount) * salePrice
+        uint256 salePrice = l._tokenListInfo[tokenId].salePrice;
+
+        uint256 transactionValue = (amount).mul(salePrice); // Sale price should be determined based on the amount supplied into the buy function, (buyAmount) * salePrice
 
         require(bypassValueCheck || transactionValue == msg.value, "salePrice and msg.value mismatch");
 
         _transferFrom(l._tokenListInfo[tokenId].lister, _msgSender(), tokenId, amount, transactionValue);
 
-        emit Bought(tokenId, l._tokenListInfo[tokenId].salePrice, amount);
+        emit Bought(tokenId, salePrice, amount);
     }
 
     function transferFrom(address from, address to, uint256 tokenId, uint256 amount) public virtual {
